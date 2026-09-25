@@ -84,12 +84,28 @@ static const int SCROLL_DELAY_MS = 16;
 static const int GAP_PX          = 60;
 
 // ---------------------------------------------------------------- prototypes
+struct Button {
+  uint8_t       pin;
+  bool          down      = false;
+  unsigned long downAt    = 0;
+  bool          longFired = false;
+};
+
+Button bBoot{BTN_BOOT};
+Button bUser{BTN_USER};
+
+enum BtnEvent { BTN_NONE, BTN_SHORT, BTN_LONG };
+
+BtnEvent poll(Button &b, unsigned long longMs);
 
 void drawFrame();
 void applyMood(int idx);
 void startAP();
 void stopAP();
 void saveState();
+
+
+
 
 // ---------------------------------------------------------------- persistence
 
@@ -259,19 +275,9 @@ void stopAP() {
   Serial.println("ap: down");
 }
 
-// ---------------------------------------------------------------- buttons
 
-struct Button {
-  uint8_t       pin;
-  bool          down      = false;
-  unsigned long downAt    = 0;
-  bool          longFired = false;
-};
 
-Button bBoot{BTN_BOOT};
-Button bUser{BTN_USER};
 
-enum BtnEvent { BTN_NONE, BTN_SHORT, BTN_LONG };
 
 // Poll once per loop. Returns an event at most once per press.
 // A long press fires the moment the threshold is crossed; the following
