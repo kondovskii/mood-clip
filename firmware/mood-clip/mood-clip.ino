@@ -81,7 +81,7 @@ unsigned long lastRequest = 0;
 int           scrollX     = SCREEN_W;
 unsigned long lastStep    = 0;
 static const int SCROLL_DELAY_MS = 16;
-static const int GAP_PX          = 60;
+static const int GAP_PX          = 180;
 
 // ---------------------------------------------------------------- prototypes
 struct Button {
@@ -148,30 +148,26 @@ void drawFrame() {
   spr.fillSprite(m.bg);
   spr.setTextColor(m.fg, m.bg);
 
-  // Big face, centred in the upper area
-  spr.setTextFont(4);
-  spr.setTextSize(2);
-  spr.setTextDatum(MC_DATUM);
-  spr.drawString(m.face, SCREEN_W / 2, 58);
 
   // Scrolling message across the lower band
-  spr.setTextSize(1);
+  spr.setTextFont(4);
+  spr.setTextSize(4);
   spr.setTextDatum(TL_DATUM);
   const char *msg = currentMessage();
   int w = spr.textWidth(msg);
 
-  spr.drawString(msg, scrollX, 124);
-  spr.drawString(msg, scrollX + w + GAP_PX, 124);
+  spr.drawString(msg, scrollX, 33);
+  spr.drawString(msg, scrollX + w + GAP_PX, 33);
 
   // While the AP is up, show how to connect
   if (apActive) {
     spr.setTextFont(2);
-    spr.drawString("wifi: " AP_SSID "  ->  192.168.4.1", 6, 4);
+    spr.drawString("wifi: " AP_SSID "  ->  192.168.4.1", 6, 150);
   }
 
   spr.pushSprite(0, 0);
 
-  if (--scrollX < -(w + GAP_PX)) scrollX = 0;
+  if ((scrollX -= 3) < -(w + GAP_PX)) scrollX = 0;
 }
 
 // ---------------------------------------------------------------- web page
