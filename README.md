@@ -5,6 +5,11 @@ or from a phone over the clip's own WiFi.
 
 Hardware: LILYGO T-Display-S3 (ESP32-S3, 1.9" 170x320 ST7789) + 3.7V LiPo.
 
+## Status
+
+Running on hardware. Moods, phone control, custom messages and colour
+picking all working. Battery untested — no cells yet.
+
 ## Controls
 
 | Input | Action |
@@ -14,13 +19,12 @@ Hardware: LILYGO T-Display-S3 (ESP32-S3, 1.9" 170x320 ST7789) + 3.7V LiPo.
 
 ## Phone control
 
-Hold the USER button for two seconds. A bar appears across the top of the
-screen showing a network name.
+Hold the USER button for two seconds. A bar appears at the bottom of the screen showing the network name. It disappears once your phone has loaded the page.
 
 1. On your phone, join the WiFi network **mood-clip**
 2. Open a browser and go to **192.168.4.1** (any address works — everything
    redirects to the page)
-3. Tap a mood, or type your own message and press Enter
+3. Tap a mood, type your own message and hit **set**, or pick a background colour with the swatch
 
 No app to install, no account, and the clip never touches your home network.
 The access point shuts itself off after three minutes of no activity, because
@@ -39,9 +43,13 @@ Install:
 
 Everything else — WiFi, WebServer, Preferences — ships with the ESP32 core.
 
-TFT_eSPI needs the T-Display-S3 pin configuration, which is not in the stock
-library. Get it from LILYGO's `T-Display-S3` repo on GitHub and follow their
-instructions for copying their setup files into your `TFT_eSPI` folder.
+TFT_eSPI ships the T-Display-S3 pin configuration but doesn't enable it. Open
+`Documents/Arduino/libraries/TFT_eSPI/User_Setup_Select.h`, comment out
+`#include <User_Setup.h>`, and uncomment
+`#include <User_Setups/Setup206_LilyGo_T_Display_S3.h>`. Restart the IDE.
+
+If Arduino ever offers to update TFT_eSPI, decline — upgrading overwrites that
+file and you get a clean upload with a blank screen.
 
 Board settings:
 
@@ -56,11 +64,13 @@ Board settings:
 ## Customising
 
 Moods live in the `MOODS[]` table near the top of the sketch. Each row is a
-name, a face, a scrolling message, a background colour and a text colour. Add
-or edit rows freely — the button cycling and the web page both read the table,
-so nothing else needs changing.
+name, a face, a message, a background colour and a text colour. The name and
+face appear on the phone buttons; the message is what scrolls across the clip
+itself. Add or edit rows freely — the button cycling and the web page both
+read the table.
 
-Colours are RGB565. There are online pickers that give you the hex directly.
+Built-in fonts are ASCII only, so faces made from kana or emoji render as
+blanks. Stick to keyboard characters.
 
 ## Notes
 
