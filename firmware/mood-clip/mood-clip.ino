@@ -44,8 +44,8 @@ Preferences prefs;
 
 struct Mood {
   const char *name;      // shown on the phone button
-  const char *face;      // big, centred
-  const char *message;   // scrolls underneath
+  const char *face;      // shown on the phone button only
+  const char *message;   // scrolls across the clip
   uint16_t    bg;
   uint16_t    fg;
 };
@@ -69,12 +69,16 @@ const Mood MOODS[] = {
 };
 static const int MOOD_COUNT = sizeof(MOODS) / sizeof(MOODS[0]);
 
-int  moodIndex   = 0;
+int  moodIndex     = 0;
 char customMsg[64] = "";      // set from the phone; overrides the message
+
+uint16_t customBg    = 0;     // chosen from the phone colour picker
+bool     useCustomBg = false;
 
 // ---------------------------------------------------------------- state
 
 bool          apActive    = false;
+bool          pageServed  = false;   // someone loaded the page this session
 unsigned long apStarted   = 0;
 unsigned long lastRequest = 0;
 
@@ -83,7 +87,12 @@ unsigned long lastStep    = 0;
 static const int SCROLL_DELAY_MS = 16;
 static const int GAP_PX          = 180;
 
-// ---------------------------------------------------------------- prototypes
+// ------------------------------------------------------ types & prototypes
+
+// These must appear above the first function definition. Arduino generates
+// prototypes and inserts them there, so any type used in a signature has to
+// be declared before that point.
+
 struct Button {
   uint8_t       pin;
   bool          down      = false;
@@ -97,15 +106,11 @@ Button bUser{BTN_USER};
 enum BtnEvent { BTN_NONE, BTN_SHORT, BTN_LONG };
 
 BtnEvent poll(Button &b, unsigned long longMs);
-
 void drawFrame();
 void applyMood(int idx);
 void startAP();
 void stopAP();
 void saveState();
-
-
-
 
 // ---------------------------------------------------------------- persistence
 
@@ -135,9 +140,10 @@ const char *currentMessage() {
 
 void applyMood(int idx) {
   if (idx < 0 || idx >= MOOD_COUNT) return;
-  moodIndex  = idx;
+  moodIndex    = idx;
   customMsg[0] = '\0';        // picking a preset clears any custom text
-  scrollX    = SCREEN_W;      // restart the marquee
+  useCustomBg  = false;       // and its colour
+  scrollX      = SCREEN_W;    // restart the marquee
   saveState();
   Serial.printf("mood: %s\n", MOODS[moodIndex].name);
 }
@@ -145,11 +151,14 @@ void applyMood(int idx) {
 void drawFrame() {
   const Mood &m = MOODS[moodIndex];
 
-  spr.fillSprite(m.bg);
-  spr.setTextColor(m.fg, m.bg);
+  uint16_t bg = useCustomBg ? customBg  : m.bg;
+  uint16_t fg = useCustomBg ? TFT_BLACK : m.fg;
 
+  spr.fillSprite(bg);
+  spr.setTextColor(fg, bg);
 
-  // Scrolling message across the lower band
+  // Message, large, filling the screen. Font 4 at size 4 is 104px tall,
+  // so (170 - 104) / 2 = 33 centres it vertically.
   spr.setTextFont(4);
   spr.setTextSize(4);
   spr.setTextDatum(TL_DATUM);
@@ -157,11 +166,13 @@ void drawFrame() {
   int w = spr.textWidth(msg);
 
   spr.drawString(msg, scrollX, 33);
-  spr.drawString(msg, scrollX + w + GAP_PX, 33);
+  spr.drawString(msg, scrollX + w + GAP_PX, 33);   // second copy = seamless loop
 
-  // While the AP is up, show how to connect
-  if (apActive) {
+  // Only while waiting for someone to connect. It disappears once the page
+  // has been served, which is exactly when it stops being useful.
+  if (apActive && !pageServed) {
     spr.setTextFont(2);
+    spr.setTextSize(1);
     spr.drawString("wifi: " AP_SSID "  ->  192.168.4.1", 6, 150);
   }
 
@@ -187,6 +198,15 @@ String buildPage() {
     "input{width:100%;box-sizing:border-box;font-size:16px;padding:14px;"
     "margin-top:22px;border-radius:12px;border:1px solid #333;"
     "background:#1c1c1c;color:#eee}"
+    ".row{display:flex;gap:8px;margin-top:22px}"
+    ".row input{margin-top:0;flex:1}"
+    ".go{padding:14px 22px;font-size:16px;border-radius:12px;"
+    "background:#3a6ea5}"
+    ".sw{display:flex;align-items:center;justify-content:space-between;"
+    "margin-top:14px;padding:14px 18px;border-radius:12px;"
+    "border:1px solid #333;background:#1c1c1c;font-size:16px}"
+    ".sw input{width:52px;height:38px;padding:0;margin:0;border:0;"
+    "border-radius:9px;background:none}"
     "#s{margin-top:18px;font-size:14px;color:#888;min-height:20px}"
     "</style></head><body><h1>pick a mood</h1><div class=grid>");
 
@@ -199,16 +219,24 @@ String buildPage() {
   }
 
   h += F(
-    "</div>"
+    "</div>"                                  // closes .grid
+    "<div class=row>"
     "<input id=t maxlength=60 placeholder='or type your own...'>"
+    "<button class=go onclick=sendText()>set</button></div>"
+    "<label class=sw>pick a colour"
+    "<input type=color id=c value='#44ddaa'></label>"
     "<div id=s></div>"
     "<script>"
     "function say(m){document.getElementById('s').textContent=m}"
     "function set(i){fetch('/set?m='+i).then(()=>say('done'))}"
+    "function sendText(){var t=document.getElementById('t');"
+    "fetch('/custom?t='+encodeURIComponent(t.value))"
+    ".then(()=>say('sent'));t.blur();}"
     "document.getElementById('t').addEventListener('keydown',e=>{"
-    "if(e.key==='Enter'){"
-    "fetch('/custom?t='+encodeURIComponent(e.target.value))"
-    ".then(()=>say('sent'));}});"
+    "if(e.key==='Enter')sendText();});"
+    "document.getElementById('c').addEventListener('change',e=>{"
+    "fetch('/color?c='+e.target.value.slice(1))"
+    ".then(()=>say('colour set'));});"
     "</script></body></html>");
 
   return h;
@@ -216,6 +244,7 @@ String buildPage() {
 
 void handleRoot() {
   lastRequest = millis();
+  pageServed  = true;
   server.send(200, "text/html", buildPage());
 }
 
@@ -239,6 +268,19 @@ void handleCustom() {
   server.send(200, "text/plain", "ok");
 }
 
+void handleColor() {
+  lastRequest = millis();
+  if (server.hasArg("c")) {
+    long v = strtol(server.arg("c").c_str(), NULL, 16);
+    uint8_t r = (v >> 16) & 0xFF, g = (v >> 8) & 0xFF, b = v & 0xFF;
+    // Pack 24-bit RGB into RGB565: 5 bits red, 6 green, 5 blue.
+    customBg    = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+    useCustomBg = true;
+    Serial.printf("color: %06lX\n", v);
+  }
+  server.send(200, "text/plain", "ok");
+}
+
 // ---------------------------------------------------------------- ap
 
 void startAP() {
@@ -252,10 +294,12 @@ void startAP() {
   server.on("/", handleRoot);
   server.on("/set", handleSet);
   server.on("/custom", handleCustom);
+  server.on("/color", handleColor);
   server.onNotFound(handleRoot);   // any URL lands on the page
   server.begin();
 
   apActive    = true;
+  pageServed  = false;
   apStarted   = millis();
   lastRequest = millis();
 
@@ -271,9 +315,7 @@ void stopAP() {
   Serial.println("ap: down");
 }
 
-
-
-
+// ---------------------------------------------------------------- buttons
 
 // Poll once per loop. Returns an event at most once per press.
 // A long press fires the moment the threshold is crossed; the following
@@ -343,7 +385,10 @@ void loop() {
 
   if (apActive) {
     server.handleClient();
-    if (now - lastRequest > AP_TIMEOUT_MS) {
+    // millis() read fresh here, not the cached `now`: lastRequest is set
+    // inside startAP() just above, so it can be slightly ahead of `now`,
+    // and unsigned subtraction would wrap to a huge number and fire at once.
+    if (millis() - lastRequest > AP_TIMEOUT_MS) {
       Serial.println("ap: idle timeout");
       stopAP();
     }
