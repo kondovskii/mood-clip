@@ -69,7 +69,14 @@ const Mood MOODS[] = {
 };
 static const int MOOD_COUNT = sizeof(MOODS) / sizeof(MOODS[0]);
 
+// Appended after the message, so it repeats with every scroll cycle.
+// Index 0 is "none". ASCII only — the built-in fonts have nothing else.
+// Nothing containing '<' here, it would break the HTML.
+const char *FACES[] = { "", ":)", ">:(", "-_-", ":|", "^-^", ":O", ":P", "x_x" };
+static const int FACE_COUNT = sizeof(FACES) / sizeof(FACES[0]);
+
 int  moodIndex     = 0;
+int  faceIndex     = 0;       // 0 = no face
 char customMsg[64] = "";      // set from the phone; overrides the message
 
 uint16_t customBg    = 0;     // chosen from the phone colour picker
@@ -117,6 +124,7 @@ void saveState();
 void saveState() {
   prefs.begin("moodclip", false);
   prefs.putInt("mood", moodIndex);
+  prefs.putInt("face", faceIndex);
   prefs.putString("custom", customMsg);
   prefs.end();
 }
@@ -124,18 +132,27 @@ void saveState() {
 void loadState() {
   prefs.begin("moodclip", true);
   moodIndex = prefs.getInt("mood", 0);
+  faceIndex = prefs.getInt("face", 0);
   String c  = prefs.getString("custom", "");
   prefs.end();
 
   if (moodIndex < 0 || moodIndex >= MOOD_COUNT) moodIndex = 0;
+  if (faceIndex < 0 || faceIndex >= FACE_COUNT) faceIndex = 0;
   strncpy(customMsg, c.c_str(), sizeof(customMsg) - 1);
   customMsg[sizeof(customMsg) - 1] = '\0';
 }
 
 // ---------------------------------------------------------------- display
 
-const char *currentMessage() {
-  return customMsg[0] ? customMsg : MOODS[moodIndex].message;
+// The face is appended to the message rather than drawn separately, so the
+// marquee's two copies carry it along and it reappears every cycle.
+String currentMessage() {
+  String m = customMsg[0] ? String(customMsg) : String(MOODS[moodIndex].message);
+  if (faceIndex > 0) {
+    m += "  ";
+    m += FACES[faceIndex];
+  }
+  return m;
 }
 
 void applyMood(int idx) {
@@ -144,7 +161,7 @@ void applyMood(int idx) {
   customMsg[0] = '\0';        // picking a preset clears any custom text
   useCustomBg  = false;       // and its colour
   scrollX      = SCREEN_W;    // restart the marquee
-  saveState();
+  saveState();                // the face is deliberately kept
   Serial.printf("mood: %s\n", MOODS[moodIndex].name);
 }
 
@@ -162,7 +179,7 @@ void drawFrame() {
   spr.setTextFont(4);
   spr.setTextSize(4);
   spr.setTextDatum(TL_DATUM);
-  const char *msg = currentMessage();
+  String msg = currentMessage();
   int w = spr.textWidth(msg);
 
   spr.drawString(msg, scrollX, 33);
@@ -191,6 +208,7 @@ String buildPage() {
     "body{font-family:system-ui,sans-serif;background:#111;color:#eee;"
     "margin:0;padding:24px;text-align:center}"
     "h1{font-size:20px;font-weight:600;margin:0 0 20px}"
+    "h2{font-size:14px;font-weight:500;color:#888;margin:22px 0 10px}"
     ".grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}"
     "button{font-size:17px;padding:20px 8px;border:0;border-radius:14px;"
     "background:#2a2a2a;color:#eee;cursor:pointer}"
@@ -202,6 +220,8 @@ String buildPage() {
     ".row input{margin-top:0;flex:1}"
     ".go{padding:14px 22px;font-size:16px;border-radius:12px;"
     "background:#3a6ea5}"
+    ".faces{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}"
+    ".faces button{font-size:15px;padding:14px 4px}"
     ".sw{display:flex;align-items:center;justify-content:space-between;"
     "margin-top:14px;padding:14px 18px;border-radius:12px;"
     "border:1px solid #333;background:#1c1c1c;font-size:16px}"
@@ -218,8 +238,17 @@ String buildPage() {
     h += "</button>";
   }
 
+  h += F("</div>"                            // closes .grid
+         "<h2>add a face</h2><div class=faces>");
+
+  for (int i = 0; i < FACE_COUNT; i++) {
+    h += "<button onclick=\"face(" + String(i) + ")\">";
+    h += (i == 0) ? "none" : FACES[i];
+    h += "</button>";
+  }
+
   h += F(
-    "</div>"                                  // closes .grid
+    "</div>"                                 // closes .faces
     "<div class=row>"
     "<input id=t maxlength=60 placeholder='or type your own...'>"
     "<button class=go onclick=sendText()>set</button></div>"
@@ -229,6 +258,7 @@ String buildPage() {
     "<script>"
     "function say(m){document.getElementById('s').textContent=m}"
     "function set(i){fetch('/set?m='+i).then(()=>say('done'))}"
+    "function face(i){fetch('/face?f='+i).then(()=>say('face set'))}"
     "function sendText(){var t=document.getElementById('t');"
     "fetch('/custom?t='+encodeURIComponent(t.value))"
     ".then(()=>say('sent'));t.blur();}"
@@ -268,6 +298,20 @@ void handleCustom() {
   server.send(200, "text/plain", "ok");
 }
 
+void handleFace() {
+  lastRequest = millis();
+  if (server.hasArg("f")) {
+    int f = server.arg("f").toInt();
+    if (f >= 0 && f < FACE_COUNT) {
+      faceIndex = f;
+      scrollX   = SCREEN_W;
+      saveState();
+      Serial.printf("face: %s\n", faceIndex ? FACES[faceIndex] : "(none)");
+    }
+  }
+  server.send(200, "text/plain", "ok");
+}
+
 void handleColor() {
   lastRequest = millis();
   if (server.hasArg("c")) {
@@ -294,6 +338,7 @@ void startAP() {
   server.on("/", handleRoot);
   server.on("/set", handleSet);
   server.on("/custom", handleCustom);
+  server.on("/face", handleFace);
   server.on("/color", handleColor);
   server.onNotFound(handleRoot);   // any URL lands on the page
   server.begin();
