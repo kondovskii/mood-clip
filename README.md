@@ -8,7 +8,8 @@ Hardware: LILYGO T-Display-S3 (ESP32-S3, 1.9" 170x320 ST7789) + 3.7V LiPo.
 ## Status
 
 Running on hardware. Moods, phone control, custom messages and colour
-picking all working. Battery untested — no cells yet.
+picking all working. Battery untested — no cells yet. Ordered clip backings. 
+
 
 ## Controls
 
