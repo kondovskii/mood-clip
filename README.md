@@ -2,7 +2,6 @@
 
 A wearable hair clip that displays a mood. Change it with the onboard button,
 or from a phone over the clip's own WiFi.
-
 Hardware: LILYGO T-Display-S3 (ESP32-S3, 1.9" 170x320 ST7789) + 3.7V LiPo.
 
 ## Status
