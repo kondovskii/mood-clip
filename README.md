@@ -6,15 +6,27 @@ Hardware: LILYGO T-Display-S3 (ESP32-S3, 1.9" 170x320 ST7789) + 3.7V LiPo.
 
 ## Status
 
-Running on hardware. Moods, phone control, custom messages and colour
-picking all working. Battery untested — no cells yet. Ordered clip backings. 
+Running on hardware and on battery. Moods, phone control, custom messages,
+faces and colour picking all working. Deep sleep working. Clips glued to
+acrylic backings; assembly in progress.
 
 ## Controls
 
 | Input | Action |
 |---|---|
 | BOOT button (GPIO0), short press | next mood |
+| BOOT button (GPIO0), hold 2 seconds | sleep |
 | USER button (GPIO14), hold 2 seconds | toggle phone control |
+
+## Power
+
+There's no power switch. Hold BOOT for two seconds and the clip goes into
+deep sleep — the screen goes black and it draws tens of microamps instead of
+tens of milliamps. Press BOOT once to wake it; the mood comes back as you
+left it, because it's saved to flash.
+
+Charge over USB-C with the battery still connected. About two hours from flat.
+It runs while charging, so it works as a desk display plugged in.
 
 ## Phone control
 
@@ -23,7 +35,7 @@ Hold the USER button for two seconds. A bar appears at the bottom of the screen 
 1. On your phone, join the WiFi network **mood-clip**
 2. Open a browser and go to **192.168.4.1** (any address works — everything
    redirects to the page)
-3. Tap a mood, type your own message and hit **set**, or pick a background colour with the swatch
+3. Tap a mood, pick a face to append, type your own message and hit **set**, or pick a background colour with the swatch
 
 No app to install, no account, and the clip never touches your home network.
 The access point shuts itself off after three minutes of no activity, because
@@ -71,6 +83,11 @@ read the table.
 Built-in fonts are ASCII only, so faces made from kana or emoji render as
 blanks. Stick to keyboard characters.
 
+Faces live in a separate `FACES[]` table. The chosen face is appended to the
+message rather than drawn separately, so the marquee carries it along and it
+reappears after every repetition. Index 0 is "none". Don't put `<` in a face —
+it breaks the generated HTML.
+
 ## Notes
 
 - The chosen mood and any custom message survive a reboot (saved to flash).
@@ -81,4 +98,9 @@ blanks. Stick to keyboard characters.
 - **GPIO15 must be driven HIGH** or the screen stays black on battery. Already
   handled in `setup()`. It works fine over USB without it, which is how this
   wastes an evening.
-- Expect roughly 3-4 hours on a 500mAh cell, less while the AP is running.
+- Expect 4-6 hours on a 500mAh cell with the radio off, less while the AP is up.
+- **Deep sleep needs the RTC pull-up.** `pinMode(INPUT_PULLUP)` only applies
+  while awake; in deep sleep GPIO0 floats, reads low, and wakes the board
+  instantly. `rtc_gpio_pullup_en(GPIO_NUM_0)` before arming the wakeup is the fix.
+- Wait for the button to be released before sleeping, or the wake trigger fires
+  on the press that put it to sleep.

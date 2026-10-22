@@ -11,7 +11,8 @@
  *
  * No secrets file, no network credentials. Safe to hand to someone.
  */
-
+#include <esp_sleep.h>
+#include <driver/rtc_io.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -360,6 +361,22 @@ void stopAP() {
   Serial.println("ap: down");
 }
 
+void goToSleep() {
+  Serial.println("sleeping");
+  delay(50);
+  if (apActive) stopAP();
+  tft.fillScreen(TFT_BLACK);
+  digitalWrite(PIN_LCD_BL, LOW);      // backlight off
+  digitalWrite(PIN_POWER_ON, LOW);    // peripherals off
+  while (digitalRead(BTN_BOOT) == LOW) delay(10);   // wait for release
+  delay(100);                                        // let it settle
+  rtc_gpio_pullup_en(GPIO_NUM_0);
+  rtc_gpio_pulldown_dis(GPIO_NUM_0);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);
+  esp_sleep_enable_ext0_wakeup(GPIO_NUM_0, 0);   // BOOT pulled low wakes it
+  esp_deep_sleep_start();
+}
+
 // ---------------------------------------------------------------- buttons
 
 // Poll once per loop. Returns an event at most once per press.
@@ -401,6 +418,7 @@ void setup() {
   Serial.begin(115200);
   delay(300);
   Serial.println("\nmood-clip starting");
+  Serial.printf("wake cause: %d\n", esp_sleep_get_wakeup_cause());
 
   tft.init();
   tft.setRotation(1);
@@ -418,10 +436,10 @@ void setup() {
 void loop() {
   unsigned long now = millis();
 
-  // BOOT: short press cycles to the next mood
-  if (poll(bBoot, 0) == BTN_SHORT) {
-    applyMood((moodIndex + 1) % MOOD_COUNT);
-  }
+  // BOOT: short press = next mood, hold 2s = sleep
+  BtnEvent e = poll(bBoot, 2000);
+  if (e == BTN_SHORT) applyMood((moodIndex + 1) % MOOD_COUNT);
+  if (e == BTN_LONG)  goToSleep();
 
   // USER: hold 2s to toggle phone control
   if (poll(bUser, 2000) == BTN_LONG) {
